@@ -9,7 +9,7 @@
     "dev:web": "vite",
     "build": "pnpm build:web && pnpm build:api",
     "build:web": "vite build",
-    "build:api": "node scripts/build-server.mjs",
+   "build:api": "node scripts/build-worker.mjs",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
