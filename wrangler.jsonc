@@ -4,6 +4,13 @@
   "main": "dist/index.js",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dayline-activity-tracker",
+      "database_id": "230e7267-7f37-43d6-937f-c1dccd66215c"
+    }
+  ],
   "assets": {
     "directory": "dist/public",
     "binding": "ASSETS",
@@ -13,3 +20,4 @@
     "enabled": true
   }
 }
+
