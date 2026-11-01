@@ -45,10 +45,12 @@ await esbuild.build({
   target: "es2022",
   format: "esm",
   outfile: "dist/index.js",
+  mainFields: ["module", "main"],
   conditions: ["workerd", "browser"],
   plugins: [plugin],
   define: { "process.env.NODE_ENV": '"production"' },
   footer: { js: '\nexport default { fetch: globalThis.__HONO_FETCH || (async () => new Response("Server not initialized", { status: 500 })) };' },
 })
 console.log("Built dist/index.js for Workers")
+
 
