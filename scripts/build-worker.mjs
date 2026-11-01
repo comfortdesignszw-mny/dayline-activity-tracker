@@ -53,4 +53,3 @@ await esbuild.build({
 })
 console.log("Built dist/index.js for Workers")
 
-
