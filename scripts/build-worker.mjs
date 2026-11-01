@@ -20,12 +20,14 @@ console.log("Entry point:", entry)
 // --- 2. Shim Node.js-only packages ---
 const shimCode = {
   "shim:hono": `export function serve(o){globalThis.__HONO_FETCH=o.fetch;return{close(){}}}`,
+  "shim:serveStatic": `export function serveStatic(){return async(c,n)=>{await n()}}`,
   "shim:pg": `export default{};export const Pool=class{query(){return Promise.resolve({rows:[]})}};export const Client=class{connect(){}query(){return Promise.resolve({rows:[]})}};export const types={getTypeParser:()=>(v)=>v}`,
   "shim:dotenv": `export function config(){return{}}`,
 }
 const plugin = {
   name: "workers-shims",
   setup(b) {
+    b.onResolve({ filter: /^@hono\/node-server\/serve-static/ }, () => ({ path: "shim:serveStatic", namespace: "shim" }))
     b.onResolve({ filter: /^@hono\/node-server(\/|$)/ }, () => ({ path: "shim:hono", namespace: "shim" }))
     b.onResolve({ filter: /^pg(\/|$)/ }, () => ({ path: "shim:pg", namespace: "shim" }))
     b.onResolve({ filter: /^dotenv(\/|$)/ }, () => ({ path: "shim:dotenv", namespace: "shim" }))
@@ -52,4 +54,5 @@ await esbuild.build({
   footer: { js: '\nexport default { fetch: globalThis.__HONO_FETCH || (async () => new Response("Server not initialized", { status: 500 })) };' },
 })
 console.log("Built dist/index.js for Workers")
+
 
