@@ -1,13 +1,12 @@
 // ── AGENT-OWNED: business data-access ─────────────────────────────────────────
 // Every query is owner-scoped: the WHERE clause always carries ownerId, so one
 // user can never read or touch another's rows.
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import { db } from "./_core/db";
-import { activities, categories, goals, reminders } from "../drizzle/schema";
-import { buildSampleActivities, buildSampleGoals } from "../shared/sample-data";
-import { localToday } from "../shared/analytics";
-import { tagsToText } from "../shared/activities";
-import type { SyncActivity, SyncGoal } from "../shared/sync";
+import { getDb } from './db'
+app.get('/activities', async (c) => {
+  const db = getDb(c.env.DB)
+  const activities = await db.select().from(schema.activities)
+  return c.json(activities)
+})
 
 export interface ActivityInput {
   category: string;
