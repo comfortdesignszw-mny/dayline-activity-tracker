@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dayline",
+  "main": "server/index.ts",
+  "compatibility_date": "2025-01-15",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // ── Static assets ──────────────────────────────────────────────────────────
+  // `vite build` writes the SPA to dist/client. Workers Assets serves it, and
+  // `not_found_handling: single-page-application` is what makes a deep link
+  // like /history work on a hard refresh: any path with no matching file gets
+  // index.html, and the client router takes over.
+  //
+  // `run_worker_first` keeps the API on the Worker. Without it, a request to
+  // /trpc/* would be answered by the assets layer (404, or worse, index.html)
+  // before the Worker ever ran.
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/trpc/*", "/api/*"]
+  },
+
+  // ── D1 ─────────────────────────────────────────────────────────────────────
+  // The database_id is a placeholder: `wrangler d1 create dayline` prints the
+  // real one, and you paste it here (see README → Deploying). It is left as a
+  // placeholder rather than a fake UUID so a deploy fails loudly with
+  // "database not found" instead of silently creating a second database.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dayline",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  },
+
+  // Local development defaults. `wrangler dev` reads .dev.vars for secrets;
+  // these are non-secret and safe to commit.
+  "vars": {
+    "APP_SLUG": "dayline",
+    "AUTH_PROVIDER": "local"
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "name": "dayline",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.15.1",
+  "description": "Dayline \u2014 an offline-first daily activity tracker on Cloudflare Workers + D1.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "dev:worker": "wrangler dev",
+    "build": "vite build",
+    "preview": "pnpm build && wrangler dev",
+    "deploy": "pnpm build && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate": "wrangler d1 migrations apply dayline --local",
+    "db:migrate:remote": "wrangler d1 migrations apply dayline --remote",
+    "db:seed": "wrangler d1 execute dayline --local --file=./migrations/0001_init.sql",
+    "db:create": "wrangler d1 create dayline",
+    "db:console": "wrangler d1 execute dayline --local --command",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@hono/trpc-server": "0.3.4",
+    "@radix-ui/react-label": "2.1.12",
+    "@radix-ui/react-slot": "1.3.0",
+    "@tanstack/react-query": "5.101.4",
+    "@trpc/client": "11.18.0",
+    "@trpc/react-query": "11.18.0",
+    "@trpc/server": "11.18.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.12.31",
+    "lucide-react": "1.25.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "superjson": "2.2.6",
+    "tailwind-merge": "3.6.0",
+    "wouter": "3.10.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20250109.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "drizzle-kit": "0.31.10",
+    "tailwindcss": "4.3.3",
+    "tw-animate-css": "1.4.0",
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vitest": "4.1.10",
+    "wrangler": "4.156.1"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

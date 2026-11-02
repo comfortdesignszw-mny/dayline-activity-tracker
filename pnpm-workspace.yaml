@@ -1,0 +1,11 @@
+# pnpm 10+ blocks dependency build scripts by default; esbuild needs its build
+# step (its native binary, used by Vite/@tailwindcss) and so does workerd's
+# helper packages pulled in by wrangler.
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: false
+  core-js: false
+minimumReleaseAgeExclude:
+  - miniflare@5.20261101.0-beta
+  - wrangler@4.156.1

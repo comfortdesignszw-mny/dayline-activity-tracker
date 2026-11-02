@@ -1,288 +1,289 @@
-# Dayline — Daily Activity Tracker
+# Dayline
 
-An installable, offline-first PWA for logging how you actually spend your days. Log
-exercise, work, reading, sleep and ten other categories, set per-category daily or
-weekly goals, and see where the time went through a dashboard of charts, streaks and
-goal rings.
+An offline-first daily activity tracker. Log what you did, see where the time
+went, and keep a streak — on a phone, on a laptop, on a plane with the Wi-Fi
+off. Built as an installable PWA on **Cloudflare Workers + D1**.
 
-It works with the network completely off. Every read and write goes to IndexedDB
-first; a background sync engine reconciles with Postgres when a connection exists.
+- **Dashboard** — today's totals, a 7-day stacked bar chart, a category donut,
+  per-category goal rings, a time-of-day heatmap, streaks, recent entries.
+- **Log** — 14 categories, duration, date, start time, notes, intensity,
+  location, free-form tags.
+- **History** — the full log grouped by day, filterable by range, category,
+  intensity, location and tag; edit and delete in place.
+- **Goals** — a daily or weekly minute target per category.
+- **Offline-first** — IndexedDB is the source of truth. Every mutation queues in
+  an outbox and syncs when the network returns. Last-write-wins on `updated_at`,
+  with soft deletes so a deletion made offline still propagates.
+- **Installable** — a service worker precaches the whole shell, so the installed
+  app cold-starts with zero network requests.
 
 ---
 
-## What's in it
+## Stack
 
-| Area | Detail |
-|---|---|
-| **Accounts** | Email + password sign-up/login, bcrypt hashes, httpOnly JWT session cookie |
-| **Data model** | `activities` (14 categories, duration, date, start time, notes, intensity, location, tags), `goals` (per-category daily/weekly targets), seeded `categories` |
-| **Dashboard** | Today's summary cards, 7-day stacked bar chart, category donut, goal progress rings, time-of-day heatmap, per-category streaks, recent entries |
-| **Log** | Add/edit an activity with quick-pick durations, tag chips, date shortcuts |
-| **History** | Filter by range, category, intensity, location, tag and free text; grouped by day with per-day totals; edit and delete |
-| **Offline** | IndexedDB as source of truth, outbox queue, last-write-wins merge, soft deletes |
-| **PWA** | Manifest, maskable icons, install button, service worker with full shell precache |
-
-**Deliberately not included:** reminders/notifications, live stopwatch, sharing/teams,
-CSV export, mood/energy ratings.
-
-> **Note on leftover modules.** `shared/reminders.ts`, `shared/team.ts`,
-> `shared/timer.ts`, `shared/export.ts`, `server/db-extras.ts`,
-> `client/src/lib/report-pdf.ts` and `client/src/pages/_probe.ts` are unused
-> remnants of an earlier, wider build. Nothing imports them, no route reaches
-> them, and they are not part of the shipped app — but they are included here so
-> the package matches the source tree exactly. They typecheck and their tests
-> pass. Delete them freely; the app does not depend on them.
+| Layer | Choice | Why |
+|---|---|---|
+| Runtime | Cloudflare Workers | One deployable unit serves both the API and the SPA |
+| Database | Cloudflare D1 (SQLite) | Serverless SQL at the edge, no connection pool to manage |
+| ORM | Drizzle (`drizzle-orm/d1`) | Typed queries; the schema is the single source of truth |
+| API | tRPC 11 over Hono | End-to-end types with no codegen step |
+| Client | React 19 + Vite 8 + Tailwind 4 | Fast HMR, no runtime CSS |
+| Auth | Email + password, PBKDF2-SHA256 via Web Crypto, JWT in an httpOnly cookie | No Node crypto, no bcrypt CPU cost on a Worker |
+| Offline | IndexedDB + outbox + service worker | Works with the network fully off |
 
 ---
 
 ## Project structure
 
 ```
-dayline/
-├── client/                     # React 19 SPA (Vite root)
-│   ├── index.html              # shell + PWA meta tags
+.
+├── client/                     # React SPA
+│   ├── index.html
 │   ├── public/
-│   │   ├── manifest.webmanifest
-│   │   ├── sw.js               # service worker: precache, cache-first, nav fallback
-│   │   └── icons/              # 192, 512, maskable-512, apple-touch-icon
+│   │   ├── manifest.webmanifest    # PWA manifest
+│   │   ├── sw.js                   # service worker (shell precache)
+│   │   └── icons/                  # 192, 512, maskable-512, apple-touch
 │   └── src/
-│       ├── main.tsx            # entry; registers the service worker
-│       ├── App.tsx             # routes (wouter)
-│       ├── index.css           # Tailwind v4 @theme tokens (warm palette)
-│       ├── _core/              # platform SDK: trpc client, auth hook, guards
-│       ├── components/         # AppShell, Charts, GoalRings, SyncStatus, InstallApp
-│       ├── hooks/              # useActivityLog, useOfflineStore, useSync
+│       ├── main.tsx                # providers, SW registration, sync init
+│       ├── App.tsx                 # routes
+│       ├── pages/                  # Dashboard, LogActivity, History, Login, Register
+│       ├── components/             # AppShell, Charts, GoalRings, SyncStatus, InstallApp
+│       ├── hooks/                  # useOfflineStore, useActivityLog, useSync
 │       ├── lib/
-│       │   ├── idb.ts          # IndexedDB wrapper (activities/goals/outbox/meta)
-│       │   ├── syncEngine.ts   # push/pull, LWW merge, BroadcastChannel
-│       │   └── notifications.ts# SW registration + isStandalone
-│       └── pages/              # Dashboard, LogActivity, History, Login, Register
+│       │   ├── idb.ts              # IndexedDB stores
+│       │   └── syncEngine.ts       # push/pull, outbox, BroadcastChannel
+│       └── _core/                  # trpc client, auth context, route guard
 ├── server/
-│   ├── _core/                  # platform SDK: Hono app, tRPC, auth, db, env
-│   ├── db.ts                   # all queries (owner-scoped), sync pull/push, seeding
-│   └── routers.ts              # tRPC procedures
-├── shared/                     # code used by BOTH client and server
-│   ├── activities.ts           # category slugs, validation, formatting
-│   ├── analytics.ts            # summaries, streaks, series, heatmap buckets
-│   ├── sync.ts                 # merge helpers, outbox + sync row types
-│   ├── sample-data.ts          # deterministic 5-week seed generator
-│   └── constants.ts, types.ts
-├── drizzle/
-│   ├── schema.ts               # Drizzle table definitions
-│   └── migrations/             # ordered SQL + meta snapshots (source of truth)
-├── scripts/                    # build-server.mjs, apply-sql.mjs, record-migration.mjs
-├── vite.config.ts              # React dedupe/alias, dev proxy, build output
-├── vitest.config.ts
-├── drizzle.config.ts
-├── tsconfig.json
-├── package.json
-└── pnpm-lock.yaml
+│   ├── index.ts                # Worker entry (fetch handler)
+│   ├── routers.ts              # tRPC API surface
+│   ├── db.ts                   # data access + sync merge
+│   └── _core/                  # env, D1 handle, auth, context, trpc, cookies
+├── shared/                     # code used by BOTH sides
+│   ├── activities.ts           # the 14 categories, validation, tag helpers
+│   ├── analytics.ts            # streaks, goal progress, heatmap, series
+│   ├── sync.ts                 # merge rules (LWW), row shapes
+│   └── sample-data.ts          # first-run seed
+├── drizzle/schema.ts           # SQLite schema (Drizzle)
+├── migrations/                 # D1 SQL migrations (wrangler applies these)
+├── scripts/seed.mjs            # apply migrations + verify seeded categories
+├── wrangler.jsonc              # Worker, D1 binding, assets config
+├── vite.config.ts              # SPA build → dist/client
+└── .github/workflows/deploy.yml
 ```
 
 ---
 
-## Install and run locally
+## Prerequisites
 
-**Prerequisites:** Node ≥ 20.19, pnpm 11, and a Postgres 14+ database.
+- **Node.js 20.19+** (22 recommended)
+- **pnpm 11** — `npm i -g pnpm@11`
+- A **Cloudflare account** (free tier is enough) — only needed to deploy
+
+---
+
+## Run it locally
 
 ```bash
-# 1. Install dependencies
 pnpm install
-
-# 2. Configure environment
-cp .env.example .env
-#    then edit .env — at minimum DATABASE_URL and JWT_SECRET
-
-# 3. Create the database (if it doesn't exist)
-createdb dayline
-
-# 4. Run migrations
-pnpm db:migrate
-
-# 5. Start dev (Vite on :3000, API on :3001, proxied)
-pnpm dev
+cp .dev.vars.example .dev.vars     # then set JWT_SECRET (see below)
+pnpm db:migrate                    # create the local D1 schema + seed categories
+pnpm dev:worker                    # Worker + local D1 on http://localhost:8787
 ```
 
-Open <http://localhost:3000>, click **Create account**, and sign up. The first sync
-pull seeds your account with ~5 weeks of sample activities and five starter goals, so
-the dashboard is populated immediately. (Seeding is idempotent — it only runs when the
-account has zero activities.)
+That single command is enough — the Worker serves the built SPA *and* the API.
+Open <http://localhost:8787>, sign up, and the account is seeded with ~5 weeks of
+sample entries and five starter goals.
 
-### Database setup notes
+For **hot reload** while editing the client, run two terminals:
 
-- **Migrations are the source of truth.** `drizzle/migrations/*.sql` are ordered and
-  applied by `drizzle-kit migrate`. Never diff a live database to generate schema.
-- The `categories` table is seeded **inside a migration** (`0003`, revised in `0005`),
-  not by a seed script — so the 14 categories exist in production too.
-- `drizzle-kit` always connects over TCP using `DATABASE_URL`. On Neon, use the
-  **direct** (non-pooler) connection string for migrations.
-- To change the schema: edit `drizzle/schema.ts`, then `pnpm db:generate` to emit a
-  new migration, then `pnpm db:migrate`.
+```bash
+pnpm dev:worker     # terminal 1 — API + D1 on :8787
+pnpm dev            # terminal 2 — Vite on :5173, proxies /trpc to :8787
+```
 
-### Useful scripts
+Then use <http://localhost:5173>.
 
-| Command | What it does |
-|---|---|
-| `pnpm dev` | Vite + API with HMR |
-| `pnpm typecheck` | `tsc --noEmit` across client, server, shared |
-| `pnpm test` | Vitest (19 suites) |
-| `pnpm db:generate` | Emit a migration from schema changes |
-| `pnpm db:migrate` | Apply pending migrations |
-| `pnpm build` | Build client → `dist/public`, bundle server → `dist/index.js` |
-| `pnpm start` | Run the production server |
+### Generating `JWT_SECRET`
+
+```bash
+openssl rand -base64 48
+```
+
+Paste it into `.dev.vars`. In development a missing secret falls back to a
+dev-only value; **in production the Worker refuses to start without it**, because
+the alternative is signing every session with a value an attacker can read out of
+the repo.
+
+### Database setup
+
+D1 is SQLite, and `wrangler dev` keeps a **local** copy under
+`.wrangler/state/` — no Postgres, no Docker, no connection string. The schema
+lives in `migrations/0001_init.sql` and is applied by:
+
+```bash
+pnpm db:migrate          # local
+pnpm db:migrate:remote   # the real database (after `wrangler d1 create`)
+```
+
+The fourteen categories are **seeded inside the migration**, not by a separate
+script, so a freshly created database is usable immediately. `pnpm db:seed` runs
+the migrations and then asserts that all 14 categories are present — useful in CI
+or after a manual `d1 create`.
+
+Inspect the local database at any time:
+
+```bash
+pnpm db:console "select category, count(*) from activities group by category"
+```
 
 ---
 
 ## Build for production
 
 ```bash
-pnpm build     # client to dist/public, server bundled to dist/index.js
-NODE_ENV=production pnpm start
+pnpm build
 ```
 
-One Hono process serves both the static SPA from `dist/public` and the tRPC API on
-`PORT`. There is no Vite in production.
-
-> **Note on served vs. packaged code:** the live app's served files are minified and
-> content-hashed by the host's build pipeline. This package contains the readable
-> source — the same code, before minification.
+This writes the SPA to `dist/client`, which is the directory the `assets` binding
+in `wrangler.jsonc` serves. The Worker itself is bundled by wrangler from
+`server/index.ts` at deploy time — there is no separate server build step.
 
 ---
 
 ## How offline-first sync works
 
-### Local store is the source of truth
+**IndexedDB is the source of truth.** The UI never waits on the network: every
+read comes from the local store, and every write lands there first.
 
-`client/src/lib/idb.ts` opens IndexedDB database `dayline` (v1) with four stores:
+1. **Write** — a mutation is written to IndexedDB, applied to React state
+   optimistically, and appended to an `outbox` store with a client-generated
+   UUID and a timestamp.
+2. **Push** — the sync engine sends the queued rows to `sync.push`. The outbox is
+   cleared only after the server accepts them, so a failed push is retried rather
+   than lost.
+3. **Pull** — `sync.pull` returns the user's full store, which is merged into
+   IndexedDB.
+4. **Merge** — last-write-wins on `updated_at`. A row whose stored `updated_at`
+   is newer than the incoming one is left untouched, so a slow device pushing a
+   stale edit cannot roll back a newer one. Deletions are **soft**: a `deleted_at`
+   tombstone travels like any other field, so a delete made offline still beats a
+   stale live copy from another device.
+5. **Triggers** — sync runs on app start, on the `online` event, every 60
+   seconds, and immediately after each mutation.
+6. **Multi-tab / multi-device** — a `BroadcastChannel` tells other tabs in the
+   same browser to re-sync; other devices converge on the next pull.
 
-| Store | Key | Contents |
-|---|---|---|
-| `activities` | `id` | full activity rows, including `updatedAt` / `deletedAt` |
-| `goals` | `id` | per-category targets |
-| `outbox` | `id` | queued mutations awaiting push |
-| `meta` | `key` | last sync timestamp, cached user |
+The status indicator in the sidebar shows **Synced**, **Syncing**, or
+**Offline · N pending**, and offers a manual **Sync now**.
 
-Every UI read comes from IndexedDB, never from the network. Every write goes to
-IndexedDB **and** appends an outbox entry with a client-generated UUID
-(`crypto.randomUUID()`) and a timestamp. The UI never waits on the server, which is
-why logging works identically online and offline.
-
-### Push / pull
-
-`client/src/lib/syncEngine.ts` runs two directions:
-
-- **Push** — send queued outbox mutations to `sync.push`. The server upserts by id,
-  scoped to the owner, and returns the accepted rows.
-- **Pull** — fetch the owner's full store via `sync.pull` and merge it in.
-
-### Merge rules
-
-Both directions use the helpers in `shared/sync.ts`:
-
-- **Last-write-wins on `updatedAt`.** The newer ISO timestamp wins; ties keep local.
-- **Soft deletes.** Deleting sets `deletedAt` rather than removing the row, so a
-  tombstone propagates to other devices instead of being resurrected by a stale copy.
-  `isLive()` filters tombstones out of every read.
-- **Goals merge by category**, not by id, because a goal is unique per
-  (owner, category) — enforced by a unique index server-side.
-
-### When sync runs
-
-- On app start
-- On the `online` event (reconnect)
-- Every 60 seconds
-- Immediately after each mutation
-- On a `BroadcastChannel` message from another tab
-
-### Multi-tab and multi-device
-
-- **Same browser, multiple tabs:** a `BroadcastChannel` named `dayline-sync` posts
-  `local-change` after every mutation; other tabs re-sync immediately.
-- **Different devices:** the 60-second interval plus the on-start pull. There is no
-  websocket — the polling fallback is the mechanism, and it is what makes a change on
-  your phone appear on your desktop within a minute without a manual refresh.
-
-### Status indicator
-
-`SyncStatus` shows **synced** / **syncing** / **offline with N pending**, plus a
-manual **Sync now** action. Pending count comes straight from the outbox length.
+> **Why the API is never cached.** The service worker deliberately does not
+> intercept `/trpc` or `/api`. A cached API response would let the sync engine
+> believe it had reconciled when it had not. Letting those requests fail fast is
+> what makes "offline · N pending" honest.
 
 ---
 
 ## How the service worker works
 
-`client/public/sw.js`, registered from `main.tsx` with scope `/`.
+`client/public/sw.js`:
 
-**Install** — opens a versioned cache (`dayline-shell-v2`) and precaches the shell:
-`/`, `/index.html`, the manifest, and all four icons. It then fetches `/index.html`,
-parses out every `/assets/*` reference, and precaches those hashed JS/CSS bundles too.
-That second step is what makes a true zero-network cold start possible: the hashed
-filenames aren't known until build time, so they're discovered at install.
+- **Install** — precaches the shell (`/`, `/index.html`, the manifest, the four
+  icons) *and* the hashed JS/CSS referenced by the built `index.html`, so a cold
+  start needs no network at all.
+- **Fetch** — cache-first for the shell and static assets. Navigations fall back
+  to the cached `index.html`, which is what makes a deep link like `/history`
+  work offline.
+- **Activate** — deletes every cache whose name is not the current version.
+- **Versioning** — bump `VERSION` in `sw.js` on any shell change; the old cache
+  is cleaned up automatically.
 
-**Activate** — deletes every cache whose name isn't the current one, then
-`clients.claim()` so the new worker controls open pages immediately.
-
-**Fetch**
-
-- Non-GET, cross-origin, `/trpc` and `/app-storage` requests are **never** cached —
-  a stale activity log would be worse than an honest error.
-- **Navigations** are cache-first from `/index.html`, with a background network
-  refresh. This is the navigation fallback: every route (`/log`, `/history`, …) is
-  served the cached shell, and the client router takes it from there.
-- **Static assets** are cache-first, then network, and successful responses are
-  written back to the cache.
-
-**Bump `VERSION`** in `sw.js` on any shell change to force a fresh precache and clean
-out the old cache.
-
-### Install prompt
-
-`components/InstallApp.tsx` captures `beforeinstallprompt`, prevents the default
-mini-infobar, and shows an in-app **Install app** button that calls `prompt()`. On iOS
-Safari — which never fires that event — it shows Share → *Add to Home Screen*
-instructions instead. The button hides itself when the app is already running
-standalone (`isStandalone()`).
+**Deploy note:** serve `sw.js` with `Cache-Control: no-cache` so browsers pick up
+a new version promptly. Workers Assets does this for you.
 
 ---
 
 ## Deploying
 
-The app is a single Node process plus Postgres, so anything that runs containers or
-Node works.
+### 1. Log in
 
-1. **Provision Postgres** and set `DATABASE_URL` (direct/non-pooler for migrations).
-2. **Set environment variables** — `DATABASE_URL`, `JWT_SECRET`, `AUTH_PROVIDER=local`,
-   `NODE_ENV=production`, `PORT`. Never commit `.env`.
-3. **Run migrations** as a release step: `pnpm db:migrate`.
-4. **Build and start:** `pnpm install --frozen-lockfile && pnpm build && pnpm start`.
+```bash
+npx wrangler login
+```
 
-A `Dockerfile` is included. Two things matter for the PWA in production:
+### 2. Create the D1 database
 
-- **Serve over HTTPS.** Service workers and install prompts require a secure origin
-  (`localhost` is exempt).
-- **Don't cache `sw.js` itself.** Serve it with `Cache-Control: no-cache` so browsers
-  pick up new versions promptly. The hashed `/assets/*` files are safe to cache
-  immutably.
+```bash
+npx wrangler d1 create dayline
+```
 
-If you deploy behind a path prefix, note that `vite.config.ts` sets `base: "/"` — the
-app assumes it owns the origin root.
+This prints a `database_id`. **Paste it into `wrangler.jsonc`**, replacing
+`REPLACE_WITH_YOUR_D1_DATABASE_ID`. It is left as a placeholder on purpose: a
+deploy then fails loudly with "database not found" instead of silently creating a
+second database.
+
+### 3. Apply the schema to the real database
+
+```bash
+pnpm db:migrate:remote
+```
+
+### 4. Set the secret
+
+```bash
+npx wrangler secret put JWT_SECRET
+```
+
+### 5. Deploy
+
+```bash
+pnpm deploy          # builds, then `wrangler deploy`
+```
+
+Your app is live at `https://dayline.<your-subdomain>.workers.dev`.
+
+### Wiring the GitHub repo to Cloudflare
+
+1. Push this repo to GitHub.
+2. Create an API token at **Cloudflare dashboard → My Profile → API Tokens →
+   Create Token**, using the **Edit Cloudflare Workers** template. Add the
+   **D1 Edit** permission.
+3. Copy your **Account ID** from the Workers dashboard sidebar.
+4. In the GitHub repo: **Settings → Secrets and variables → Actions → New
+   repository secret**, and add:
+   - `CLOUDFLARE_API_TOKEN`
+   - `CLOUDFLARE_ACCOUNT_ID`
+5. Push to `main`. `.github/workflows/deploy.yml` typechecks, tests, builds,
+   applies migrations, then deploys. Pull requests run the checks but never
+   deploy.
+
+**Pages vs Workers.** This project deploys as a **Worker with static assets**
+(`assets` in `wrangler.jsonc`), not as a separate Pages project — one deployable
+unit, one origin, no CORS. If you would rather host the SPA on Pages and the API
+on a Worker, build with `VITE_API_URL=https://your-worker.workers.dev pnpm build`
+and upload `dist/client` to Pages; the client reads that variable at build time.
 
 ---
 
 ## Testing
 
 ```bash
-pnpm test        # 19 suites: analytics, streaks, sync merge, auth, routers, db
-pnpm typecheck   # strict, noUnusedLocals, noUnusedParameters
+pnpm typecheck
+pnpm test
 ```
 
-Coverage focuses on the parts where a bug is silent: date arithmetic across timezones,
-streak edge cases (today not yet logged but the streak alive), heatmap bucket
-splitting, LWW merge ordering, tombstone handling, owner scoping on every query, and
-input validation.
+Tests cover the API surface (auth, owner scoping, validation), password hashing,
+the sync merge rules, analytics (streaks, goal progress, heatmap bucketing), and
+the service-worker-independent client helpers.
 
 ---
 
-## License
+## Notes and limitations
 
-Provided as-is for the project it was built for.
+- **Single currency of time.** Durations are whole minutes; a single entry is
+  capped at 24 hours.
+- **No reminders, stopwatch, teams, or CSV export.** These were deliberately out
+  of scope for this build.
+- **Sample data is per account.** A new signup is seeded once; the seeder is
+  idempotent and does nothing once the account has rows.
+- **The live app's served files are minified** by the host. This repository
+  contains the readable source.
