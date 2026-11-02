@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "dayline",
+  "name": "dayline-activity-tracker",
   "main": "server/index.ts",
   "compatibility_date": "2025-01-15",
   "compatibility_flags": ["nodejs_compat"],
@@ -29,8 +29,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "dayline",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "database_name": "dayline-activity-tracker",
+      "database_id": "230e7267-7f37-43d6-937f-c1dccd66215c",
       "migrations_dir": "migrations"
     }
   ],
